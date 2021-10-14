@@ -1,6 +1,6 @@
 function addNewMessage(message) {
     return `
-        <li role="presentation" style="">
+        <li role="presentation" style="" class="history">
             <div class="ng-scope ng-isolate-scope">
                 <div class="activity-chat chat-message moderator user">
                     <div class="activity-message chat-message__content">
@@ -69,15 +69,17 @@ function formatMessages(messages) {
     let formatted = [];
     let previousName = '';
     messages.forEach(message => {
-        message = message.innerText.split('\n\n');
-        if (message.length == 2) {
-            message.unshift(previousName);
-        } else if (message.length > 3) {
-            message[2] = squashLines(message.slice(2));
+        if (message.className !== 'history') {
+            message = message.innerText.split('\n\n');
+            if (message.length == 2) {
+                message.unshift(previousName);
+            } else if (message.length > 3) {
+                message[2] = squashLines(message.slice(2));
+            }
+    
+            previousName = message[0];
+            formatted.push(formatMessagePacket(message));
         }
-
-        previousName = message[0];
-        formatted.push(formatMessagePacket(message));
     })
 
     return formatted;
