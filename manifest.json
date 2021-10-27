@@ -8,11 +8,19 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://au.bbcol.com/*"],
-      "js": ["content-script.js"]
+      "matches": [
+        "https://au.bbcollab.com/*"
+      ],
+      "js": [
+        "content-script.js"
+      ]
     }
   ],
-  "permissions": ["storage", "activeTab", "scripting"],
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting"
+  ],
   "action": {
     "default_popup": "popup.html"
   },
