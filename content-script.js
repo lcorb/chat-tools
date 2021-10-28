@@ -160,9 +160,10 @@ async function addSaveButton() {
     if (container && !testForButton) {
         let button = document.createElement('button');
         button.innerText = 'Save Chat';
-        button.style = 'padding-left: 15px';
+        button.style = 'border-radius: 5px';
         button.onclick = downloadChat;
         button.id = 'save-chat-button';
+        button.className = 'makeStylestoolbarControl-0-2-3 makeStylestoolbarControlSubmit-0-2-5';
         container.appendChild(button);
         loadedChatHistory = false;
         observingChatMessages = false;
