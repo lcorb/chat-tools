@@ -1,6 +1,58 @@
+let messages = {};
+let messageLog = {};
+let savedNodes = {};
+
+const getStorageData = keys =>
+    new Promise((resolve, reject) =>
+        chrome.storage.sync.get(keys, result =>
+            chrome.runtime.lastError
+                ? reject(Error(chrome.runtime.lastError.message))
+                : resolve(result)
+        )
+    )
+
+const setStorageData = async (data, keys) => {
+    const existingData = await getStorageData(keys);
+
+    keys.forEach(key => {
+        if (existingData[key]) {
+            data[key] = [...existingData[key], ...data[key]];
+        }
+    })
+
+    new Promise((resolve, reject) =>
+        chrome.storage.sync.set(data, () =>
+            chrome.runtime.lastError
+                ? reject(Error(chrome.runtime.lastError.message))
+                : resolve()
+        )
+    )
+}
+
+async function loadInitialMessages() {
+    const messages = await getStorageData();
+
+    const title = document.title.replace(' - Bb Collaborate', '');
+    let today = new Date();
+    const offset = today.getTimezoneOffset();
+    today = new Date(today.getTime() - (offset * 60 * 1000));
+    today = today.toISOString().split('T')[0];
+
+    Object.keys(messages).forEach(key => {
+        // this is slightly inefficient
+        // the title is updated after page load so we cant try to match it to a key initially
+        if (key.startsWith(`${today}`)) {
+            messageLog[key] = messages[key];
+        }
+    })
+}
+
+loadInitialMessages();
+
+
 function addNewMessage(message) {
     let time = new Date(message.time);
-    time = `${time.getHours()}:${time.getMinutes()}`
+    time = `${String(time.getHours()).padStart(2, '0')}:${String(time.getMinutes()).padStart(2, '0')}`;
 
     switch (message.type) {
         case 'joined':
@@ -31,10 +83,11 @@ function addNewMessage(message) {
         `
 
         case 'message':
+            // background: #F8D7FF;
             return `
             <li role="presentation" style="" class="history" id="ultra-chat-tools-ignore">
                 <div class="ng-scope ng-isolate-scope">
-                    <div class="activity-chat chat-message moderator user" style="border-left: #B13DC6 4px solid; background: #F8D7FF;">
+                    <div class="activity-chat chat-message moderator user" style="border-left: #B13DC6 4px solid; ">
                         <div class="activity-message chat-message__content">
                             <h4 class="activity-name chat-message__name ng-scope ng-isolate-scope" aria-hidden="true">
                                 <div class="participant-name-container has-tooltip">
@@ -62,33 +115,6 @@ function HTMLToElement(html) {
     html = html.trim();
     template.innerHTML = html;
     return template.content.firstChild;
-}
-
-const getStorageData = keys =>
-    new Promise((resolve, reject) =>
-        chrome.storage.sync.get(keys, result =>
-            chrome.runtime.lastError
-                ? reject(Error(chrome.runtime.lastError.message))
-                : resolve(result)
-        )
-    )
-
-const setStorageData = async (data, keys) => {
-    const existingData = await getStorageData(keys);
-
-    keys.forEach(key => {
-        if (existingData[key]) {
-            data[key] = [...existingData[key], ...data[key]];
-        }
-    })
-
-    new Promise((resolve, reject) =>
-        chrome.storage.sync.set(data, () =>
-            chrome.runtime.lastError
-                ? reject(Error(chrome.runtime.lastError.message))
-                : resolve()
-        )
-    )
 }
 
 function formatMessagePacket(message) {
@@ -131,24 +157,101 @@ function formatMessages(messages) {
 }
 
 function downloadChat() {
-    const messages = document.querySelectorAll('#chat-channel-history > li');
-    const niceMessages = formatMessages(messages);
-    const title = document.title.replace(' - Bb Collaborate', '');
-    const room = document.querySelector('#panel-chathistory-content > header > h1').innerText;
+    const chatMessages = document.querySelectorAll('#chat-channel-history > li');
+    let parsedMessages = [];
+    let prevName = '';
 
-    let rows = [];
-    niceMessages.forEach(c => {
-        rows.push(`${c.name},${c.time},${c.content}`);
+    const title = document.title.replace(' - Bb Collaborate', '');
+    let room = document.querySelector('#panel-chathistory-content > header > h1').innerText;
+
+    const group = document.querySelector('#chat-history-details > h2');
+
+    if (group) {
+        room = `${group.innerText}`;
+    }
+
+    let today = new Date();
+    const offset = today.getTimezoneOffset();
+    today = new Date(today.getTime() - (offset * 60 * 1000));
+    today = today.toISOString().split('T')[0];
+
+    const key = `${today}-${title}-${room}`;
+
+    if (messageLog[key]) {
+        parsedMessages = messageLog[key].map(m => {
+            let time = new Date(m.time);
+            time = `${String(time.getHours()).padStart(2, '0')}:${String(time.getMinutes()).padStart(2, '0')}`
+            return Object.assign(m, {time});
+        });
+    }
+    
+    console.log(parsedMessages);
+
+    chatMessages.forEach(message => {
+        if (message.id !== 'ultra-chat-tools-ignore') {
+            let type, name, content, time;
+            time = Date.now();
+            console.log(message);
+            let chatEvent = '';
+
+            switch (chatEvent) {
+                case 'session.chat.activity.joined':
+                    type = 'joined';
+                    content = 'Joined';
+                    name = message.innerText;
+                    name = name.split('\n\n')[0].replace('session.chat.activity.joined', '').trimStart();
+                    break;
+
+                case 'session.chat.activity.left':
+                    type = 'left';
+                    content = 'Left';
+                    name = message.innerText;
+                    name = name.split('\n\n')[0].replace('session.chat.activity.left', '').trimStart();
+                    break;
+
+                default:
+                    type = 'message';
+                    
+                    //message.children[0].children[0].children[0]
+                    // message.children[0].children.length
+                    if (message.children[0].children.length !== 3) {
+                        name = message.children[0].children[0].children[1].children[0].innerText;
+                        time = message.children[0].children[0].children[1].children[2].innerText;
+                        prevName = name;
+                        content = message.children[0].children[0].children[1].children[3].innerText;
+                    } else {
+                        name = prevName;
+                        time = message.children[0].children[1].innerText;
+                        content = message.children[0].children[2].innerText;
+                    }
+                    break;
+            }
+
+            console.log(type, name, content, time);
+
+            parsedMessages.push({ content, name, time, type });
+        }
     })
 
-    let csvContent = 'data:text/csv;charset=utf-8,name,time,message,\n';
+    let rows = [];
+    parsedMessages.forEach(c => {
+        if (c.type === 'message') {
+            rows.push(`[${c.time}] ${c.name}: ${c.content}`);
+        } else if (c.type === 'join') {
+            rows.push(`${c.name} Joined`);
+        } else if (c.type === 'leave') {
+            rows.push(`${c.name} Left`);
+        }
+    })
 
-    csvContent += rows.join(',\n');
+    let textContent = 'data:text/plain;charset=utf-8,';
 
-    let encodedUri = encodeURI(csvContent);
+    textContent += rows.join('\n');
+
+    let encodedUri = encodeURI(textContent);
     let link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `${title}-${room}.csv`);
+    link.setAttribute('download', `${today}-chat-log-${title}-${room}.txt`);
     document.body.appendChild(link);
 
     link.click();
@@ -158,43 +261,35 @@ async function addSaveButton() {
     let container = document.querySelector('#panel-chathistory-content > header');
     let testForButton = document.querySelector('#save-chat-button');
     if (container && !testForButton) {
+        const styleElement = document.createElement('style');
+        styleElement.innerHTML = `
+        #save-chat-button {
+            border-radius: 5px;
+            color: #262626 !important;
+            width: 2rem;
+            height: 2rem;
+            min-width: 5rem;
+            font-weight: bold;
+            margin-left: auto !important;
+            text-size-adjust: 100%;
+            background: transparent;
+            transition: background .2s;
+        }
+        #save-chat-button:hover {
+            background: #e5e5e5;
+        }
+        `;
+        document.head.appendChild(styleElement);
         let button = document.createElement('button');
         button.innerText = 'Save Chat';
-        button.style = 'border-radius: 5px';
         button.onclick = downloadChat;
         button.id = 'save-chat-button';
-        button.className = 'makeStylestoolbarControl-0-2-3 makeStylestoolbarControlSubmit-0-2-5';
         container.appendChild(button);
         loadedChatHistory = false;
         observingChatMessages = false;
     }
 }
 
-function saveChat() {
-    let testForButton = document.querySelector('#save-chat-button');
-
-    if (testForButton) {
-        const messages = document.querySelectorAll('#chat-channel-history > li');
-        const niceMessages = formatMessages(messages);
-        const title = document.title.replace(' - Bb Collaborate', '');
-        let room = document.querySelector('#panel-chathistory-content > header > h1').innerText;
-
-        const group = document.querySelector('#chat-history-details > h2');
-
-        if (group) {
-            room = `${group.innerText}`;
-        }
-
-        let today = new Date();
-        const offset = today.getTimezoneOffset();
-        today = new Date(today.getTime() - (offset * 60 * 1000));
-        today = today.toISOString().split('T')[0];
-
-        const key = `${today}-${title}-${room}`;
-
-        setStorageData({ [key]: niceMessages }, key);
-    }
-}
 
 async function checkToLoadData() {
     if (!loadedChatHistory) {
@@ -222,7 +317,7 @@ async function checkToLoadData() {
                     }
                     const key = `${today}-${title}-${room}`;
 
-                    console.log(`loading from: ${today}-${title}-${room}`);
+                    // console.log(`loading from: ${today}-${title}-${room}`);
                     loadedChatHistory = true;
                     // load any previously stored messages
                     const messages = await getStorageData(key);
@@ -239,11 +334,26 @@ async function checkToLoadData() {
                         });
 
                         ul.prepend(start);
+
+                        checkToSaveMessages(key);
                     }
                 }
             }
         }
     }
+}
+
+function checkToSaveMessages(key) {
+    const chatMessages = document.querySelectorAll('#chat-channel-history > li');
+    let unsaved = [];
+
+    chatMessages.forEach(m => {
+        savedNodes[key].forEach(n => {
+            if (m === n) {
+                unsaved.push(m);
+            }
+        })
+    })
 }
 
 let loadedChatHistory = false;
@@ -306,20 +416,20 @@ function observeChatPanel() {
     }
 }
 
-let messages = {};
-
 const storeMessagesInterval = setInterval(() => {
     storeMessages();
 }, 10000);
 
 
 function storeMessages() {
-    console.log('Saving...')
     setStorageData(messages, Object.keys(messages));
     clearMessageRecord();
 }
 
 function clearMessageRecord() {
+    for (const message in messages) {
+        messageLog[message] = messageLog[message] === undefined ? messages[message] : [...messageLog[message], ...messages[message]]
+    }
     messages = {};
 }
 
@@ -387,8 +497,7 @@ function observeChatMessages() {
                         }
                         break;
                 }
-                
-                console.log(type, name, message, time);
+
                 const title = document.title.replace(' - Bb Collaborate', '');
                 let room = document.querySelector('#panel-chathistory-content > header > h1').innerText;
 
@@ -404,7 +513,7 @@ function observeChatMessages() {
                 today = today.toISOString().split('T')[0];
 
                 const key = `${today}-${title}-${room}`;
-
+                savedNodes[key] === undefined ? savedNodes[key] = [mutationsList[mutation].addedNodes[0]] : messages[key].push(mutationsList[mutation].addedNodes[0])
                 recordMessage(key, type, name, time, message);
             }
         };
