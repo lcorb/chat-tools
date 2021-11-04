@@ -19,7 +19,8 @@
   "permissions": [
     "storage",
     "activeTab",
-    "scripting"
+    "scripting",
+    "desktopCapture"
   ],
   "action": {
     "default_popup": "popup.html"

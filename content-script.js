@@ -1,6 +1,7 @@
 let messages = {};
 let messageLog = {};
 let savedNodes = {};
+let recordingNumber = 1;
 
 const getStorageData = keys =>
     new Promise((resolve, reject) =>
@@ -181,10 +182,10 @@ function downloadChat() {
         parsedMessages = messageLog[key].map(m => {
             let time = new Date(m.time);
             time = `${String(time.getHours()).padStart(2, '0')}:${String(time.getMinutes()).padStart(2, '0')}`
-            return Object.assign(m, {time});
+            return Object.assign(m, { time });
         });
     }
-    
+
     console.log(parsedMessages);
 
     chatMessages.forEach(message => {
@@ -211,7 +212,7 @@ function downloadChat() {
 
                 default:
                     type = 'message';
-                    
+
                     //message.children[0].children[0].children[0]
                     // message.children[0].children.length
                     if (message.children[0].children.length !== 3) {
@@ -538,3 +539,113 @@ const checkForHeaderChangeInterval = setInterval(() => {
         currentHeader = header;
     }
 }, 100);
+
+function stopCapture() {
+    const capturebtn = document.querySelector('#start-capture-button');
+    capturebtn.onclick = startCapture;
+
+    console.log('stopping...');
+    let vid = document.querySelector('#captured-video');
+    let link = document.createElement('a');
+    const url = URL.createObjectURL(vid.srcObject);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `test`);
+    document.body.appendChild(link);
+
+    link.click();
+}
+
+async function startCapture() {
+    let vid = document.createElement('video');
+    vid.id = 'captured-video';
+    vid.style = 'visibility: hidden';
+    vid.autoplay = true;
+    // vid.muted = true;
+
+    let recording = document.createElement('video');
+    recording.style = 'visibility: hidden';
+
+    document.body.appendChild(vid);
+
+    let data = [];
+
+    async function startRecording(stream) {
+        console.log('recording........')
+        let recorder = new MediaRecorder(stream);
+
+        recorder.ondataavailable = event => data.push(event.data);
+        recorder.start();
+
+        return recorder;
+    }
+
+    const dl = document.querySelector('#start-capture-button');
+
+    const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: true
+    });
+
+    vid.srcObject = stream;
+
+    await new Promise(resolve => vid.onplaying = resolve);
+    const recorder = await startRecording(vid.captureStream());
+
+    const saveRecording = () => {
+        let recordedBlob = new Blob(data, { type: "video/mp4" });
+        recording.src = URL.createObjectURL(recordedBlob);
+
+        let link = document.createElement('a');
+        link.setAttribute('href', recording.src);
+
+        const title = document.title.replace(' - Bb Collaborate', '');
+        let today = new Date();
+        const offset = today.getTimezoneOffset();
+        today = new Date(today.getTime() - (offset * 60 * 1000));
+        today = today.toISOString().split('T')[0];
+
+        const vidName = `${today}-${title}-recording-${recordingNumber}.mp4`;
+        recordingNumber++;
+
+        link.setAttribute('download', vidName);
+        document.body.appendChild(link);
+    
+        link.click();
+        dl.onclick = startCapture;
+        link.remove()
+        vid.remove()
+    }
+
+    dl.onclick = saveRecording;
+    recorder.onstop = saveRecording;
+}
+
+function addCaptureButton() {
+    const styleElement = document.createElement('style');
+    styleElement.innerHTML = `
+    #start-capture-button {
+        height: 30px;
+        width: 30px;
+        border-radius: 15px;
+        border: 2px solid goldenrod;
+        color: #262626 !important;
+        background: white;
+        transition: background .2s;
+        position: absolute;
+        top: 95%;
+        left: 3%;
+        z-index: 10000;
+    }
+    #start-capture-button:hover {
+        background: red;
+    }
+    `;
+    document.head.appendChild(styleElement);
+    let button = document.createElement('button');
+    button.onclick = startCapture;
+    button.id = 'start-capture-button';
+    document.body.appendChild(button);
+}
+
+
+addCaptureButton();
