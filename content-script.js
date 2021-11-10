@@ -540,38 +540,16 @@ const checkForHeaderChangeInterval = setInterval(() => {
     }
 }, 100);
 
-function stopCapture() {
-    const capturebtn = document.querySelector('#start-capture-button');
-    capturebtn.onclick = startCapture;
-
-    console.log('stopping...');
-    let vid = document.querySelector('#captured-video');
-    let link = document.createElement('a');
-    const url = URL.createObjectURL(vid.srcObject);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `test`);
-    document.body.appendChild(link);
-
-    link.click();
-}
 
 async function startCapture() {
-    let vid = document.createElement('video');
-    vid.id = 'captured-video';
-    vid.style = 'visibility: hidden';
-    vid.autoplay = true;
-    // vid.muted = true;
-
-    let recording = document.createElement('video');
-    recording.style = 'visibility: hidden';
-
-    document.body.appendChild(vid);
-
     let data = [];
 
     async function startRecording(stream) {
-        console.log('recording........')
-        let recorder = new MediaRecorder(stream);
+        let recorder = new MediaRecorder(stream, {
+            audioBitsPerSecond: 128000,
+            videoBitsPerSecond: 3000000,
+            mimeType: 'video/webm;codecs=vp9'
+        });
 
         recorder.ondataavailable = event => data.push(event.data);
         recorder.start();
@@ -581,18 +559,51 @@ async function startCapture() {
 
     const dl = document.querySelector('#start-capture-button');
 
-    const stream = await navigator.mediaDevices.getDisplayMedia({
+    const screenStream = await navigator.mediaDevices.getDisplayMedia({
         video: true,
-        audio: true
+        audio: true,
     });
 
-    vid.srcObject = stream;
+    const mic = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-    await new Promise(resolve => vid.onplaying = resolve);
-    const recorder = await startRecording(vid.captureStream());
+    const audioContext = new AudioContext();
+    const micStream = audioContext.createMediaStreamSource(mic);
+    const mergedAudioStream = audioContext.createMediaStreamDestination();
+    
+    micStream.connect(mergedAudioStream);
+
+    if (screenStream.getAudioTracks().length > 0) {
+        const desktopStream = new MediaStream();
+        desktopStream.addTrack(screenStream.getAudioTracks()[0]);
+        const desktopAudioStream = audioContext.createMediaStreamSource(desktopStream);
+        desktopAudioStream.connect(mergedAudioStream);
+    }
+
+    const combinedStream = new MediaStream();
+    combinedStream.addTrack(screenStream.getVideoTracks()[0]);
+    combinedStream.addTrack(mergedAudioStream.stream.getAudioTracks()[0]);
+
+    const recorder = await startRecording(combinedStream);
+
+    const stopStream = () => {
+        dl.onclick = startCapture;
+        combinedStream.getTracks().forEach(t => {
+            t.stop();
+        });
+
+        screenStream.getTracks().forEach(t => {
+            t.stop();
+        });
+
+        if (recorder.state !== 'inactive') {
+            recorder.stop();
+        }
+    }
 
     const saveRecording = () => {
-        let recordedBlob = new Blob(data, { type: "video/mp4" });
+        let recordedBlob = new Blob(data, { type: 'video/webm; codecs=vp9' });
+
+        let recording = document.createElement('video');
         recording.src = URL.createObjectURL(recordedBlob);
 
         let link = document.createElement('a');
@@ -604,19 +615,19 @@ async function startCapture() {
         today = new Date(today.getTime() - (offset * 60 * 1000));
         today = today.toISOString().split('T')[0];
 
-        const vidName = `${today}-${title}-recording-${recordingNumber}.mp4`;
+        const vidName = `${today}-${title}-recording-${recordingNumber}.webm`;
         recordingNumber++;
 
         link.setAttribute('download', vidName);
         document.body.appendChild(link);
-    
+
         link.click();
         dl.onclick = startCapture;
-        link.remove()
-        vid.remove()
+        link.remove();
     }
 
-    dl.onclick = saveRecording;
+    dl.onclick = stopStream;
+    screenStream.oninactive = stopStream;
     recorder.onstop = saveRecording;
 }
 
@@ -648,4 +659,9 @@ function addCaptureButton() {
 }
 
 
-addCaptureButton();
+function init() {
+    addCaptureButton();
+
+}
+
+init();
