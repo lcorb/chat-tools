@@ -529,71 +529,74 @@ async function startCapture() {
     const screenStream = await navigator.mediaDevices.getDisplayMedia({
         video: true,
         audio: true,
-    }).catch(() => {});
+    }).catch(() => { });
 
     if (screenStream) {
+        updateCaptureButtonStyle(true);
         const mic = await navigator.mediaDevices.getUserMedia({ audio: true });
-    
+
         const audioContext = new AudioContext();
         const micStream = audioContext.createMediaStreamSource(mic);
         const mergedAudioStream = audioContext.createMediaStreamDestination();
-        
+
         micStream.connect(mergedAudioStream);
-    
+
         if (screenStream.getAudioTracks().length > 0) {
             const desktopStream = new MediaStream();
             desktopStream.addTrack(screenStream.getAudioTracks()[0]);
             const desktopAudioStream = audioContext.createMediaStreamSource(desktopStream);
             desktopAudioStream.connect(mergedAudioStream);
         }
-    
+
         const combinedStream = new MediaStream();
         combinedStream.addTrack(screenStream.getVideoTracks()[0]);
         combinedStream.addTrack(mergedAudioStream.stream.getAudioTracks()[0]);
-    
+
         const recorder = await startRecording(combinedStream);
-    
+
         const stopStream = () => {
             dl.onclick = startCapture;
             combinedStream.getTracks().forEach(t => {
                 t.stop();
             });
-    
+
             screenStream.getTracks().forEach(t => {
                 t.stop();
             });
-    
+
             if (recorder.state !== 'inactive') {
                 recorder.stop();
             }
+
+            updateCaptureButtonStyle(false);
         }
-    
+
         const saveRecording = () => {
-            let recordedBlob = new Blob(data, { type: recordingMIMEType});
-    
+            let recordedBlob = new Blob(data, { type: recordingMIMEType });
+
             let recording = document.createElement('video');
             recording.src = URL.createObjectURL(recordedBlob);
-    
+
             let link = document.createElement('a');
             link.setAttribute('href', recording.src);
-    
+
             const title = document.title.replace(' - Bb Collaborate', '');
             let today = new Date();
             const offset = today.getTimezoneOffset();
             today = new Date(today.getTime() - (offset * 60 * 1000));
             today = today.toISOString().split('T')[0];
-    
+
             const vidName = `${today}-${title}-recording-${recordingNumber}.webm`;
             recordingNumber++;
-    
+
             link.setAttribute('download', vidName);
             document.body.appendChild(link);
-    
+
             link.click();
             dl.onclick = startCapture;
             link.remove();
         }
-    
+
         dl.onclick = stopStream;
         screenStream.oninactive = stopStream;
         recorder.onstop = saveRecording;
@@ -603,6 +606,7 @@ async function startCapture() {
 
 function addCaptureButton() {
     const styleElement = document.createElement('style');
+    styleElement.id = 'capture-button-style';
     styleElement.innerHTML = `
     #start-capture-button {
         height: 30px;
@@ -628,6 +632,53 @@ function addCaptureButton() {
     document.body.appendChild(button);
 }
 
+
+function updateCaptureButtonStyle(recording) {
+    const styleElement = document.querySelector('#capture-button-style');
+
+    if (recording) {
+        styleElement.innerHTML = `
+        #start-capture-button {
+            height: 30px;
+            width: 30px;
+            border-radius: 15px;
+            border: 2px solid goldenrod;
+            color: #262626 !important;
+            background: red;
+            transition: background border .2s;
+            position: absolute;
+            top: 95%;
+            left: 3%;
+            z-index: 10000;
+        }
+        #start-capture-button:hover {
+            background: #1f6e43;
+            border: 2px solid white;
+        }
+        `;
+    } else {
+        styleElement.innerHTML = `
+        #start-capture-button {
+            height: 30px;
+            width: 30px;
+            border-radius: 15px;
+            border: 2px solid goldenrod;
+            color: #262626 !important;
+            background: white;
+            transition: background .2s;
+            position: absolute;
+            top: 95%;
+            left: 3%;
+            z-index: 10000;
+        }
+        #start-capture-button:hover {
+            background: red;
+        }
+        `;
+    }
+}
+
+
 function init() {
     loadInitialMessages();
     addCaptureButton();
@@ -639,7 +690,7 @@ function init() {
     const storeMessagesInterval = setInterval(() => {
         storeMessages();
     }, 10000);
-    
+
     const checkObserveChat = setInterval(() => {
         observeChatPanel();
     }, 500);
