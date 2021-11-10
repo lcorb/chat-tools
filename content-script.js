@@ -2,6 +2,15 @@ let messages = {};
 let messageLog = {};
 let savedNodes = {};
 let recordingNumber = 1;
+let currentHeader = '';
+let loadedChatHistory = false;
+let observingChatPanel = false;
+let observingChatMessages = false;
+
+let recordingMIMEType = 'video/webm;codecs=vp9';
+let recordingAudioBPS = 128000;
+let recordingVideoBPS = 3000000;
+
 
 const getStorageData = keys =>
     new Promise((resolve, reject) =>
@@ -47,8 +56,6 @@ async function loadInitialMessages() {
         }
     })
 }
-
-loadInitialMessages();
 
 
 function addNewMessage(message) {
@@ -118,6 +125,7 @@ function HTMLToElement(html) {
     return template.content.firstChild;
 }
 
+
 function formatMessagePacket(message) {
     return {
         name: message[0],
@@ -125,6 +133,7 @@ function formatMessagePacket(message) {
         content: message[2]
     }
 }
+
 
 function squashLines(content) {
     let msgContent = '';
@@ -135,6 +144,7 @@ function squashLines(content) {
 
     return msgContent;
 }
+
 
 function formatMessages(messages) {
     let formatted = [];
@@ -156,6 +166,7 @@ function formatMessages(messages) {
 
     return formatted;
 }
+
 
 function downloadChat() {
     const chatMessages = document.querySelectorAll('#chat-channel-history > li');
@@ -186,13 +197,10 @@ function downloadChat() {
         });
     }
 
-    console.log(parsedMessages);
-
     chatMessages.forEach(message => {
         if (message.id !== 'ultra-chat-tools-ignore') {
             let type, name, content, time;
             time = Date.now();
-            console.log(message);
             let chatEvent = '';
 
             switch (chatEvent) {
@@ -213,8 +221,6 @@ function downloadChat() {
                 default:
                     type = 'message';
 
-                    //message.children[0].children[0].children[0]
-                    // message.children[0].children.length
                     if (message.children[0].children.length !== 3) {
                         name = message.children[0].children[0].children[1].children[0].innerText;
                         time = message.children[0].children[0].children[1].children[2].innerText;
@@ -227,8 +233,6 @@ function downloadChat() {
                     }
                     break;
             }
-
-            console.log(type, name, content, time);
 
             parsedMessages.push({ content, name, time, type });
         }
@@ -257,6 +261,7 @@ function downloadChat() {
 
     link.click();
 }
+
 
 async function addSaveButton() {
     let container = document.querySelector('#panel-chathistory-content > header');
@@ -318,7 +323,6 @@ async function checkToLoadData() {
                     }
                     const key = `${today}-${title}-${room}`;
 
-                    // console.log(`loading from: ${today}-${title}-${room}`);
                     loadedChatHistory = true;
                     // load any previously stored messages
                     const messages = await getStorageData(key);
@@ -344,6 +348,7 @@ async function checkToLoadData() {
     }
 }
 
+
 function checkToSaveMessages(key) {
     const chatMessages = document.querySelectorAll('#chat-channel-history > li');
     let unsaved = [];
@@ -357,35 +362,16 @@ function checkToSaveMessages(key) {
     })
 }
 
-let loadedChatHistory = false;
-
-// const testForChatInterval = setInterval(() => {
-//     checkChatActive();
-// }, 1500);
-
-// const saveChatInterval = setInterval(() => {
-//     saveChat();
-// }, 5000)
-
-// const checkLoadChatInterval = setInterval(() => {
-//     checkToLoadData();
-// }, 3000);
-
 
 function checkForChatChannelHeader() {
     return Boolean(document.querySelector('#panel-chatchannelselector-content > header'));
 }
 
+
 function checkIfInChatChannel() {
     return Boolean(document.querySelector('#panel-chathistory-content > header'));
 }
 
-const checkObserveChat = setInterval(() => {
-    observeChatPanel();
-}, 500);
-
-let observingChatPanel = false;
-let observingChatMessages = false;
 
 function observeChatPanel() {
     if (observingChatPanel) { return };
@@ -416,10 +402,6 @@ function observeChatPanel() {
         observer.observe(targetNode, config);
     }
 }
-
-const storeMessagesInterval = setInterval(() => {
-    storeMessages();
-}, 10000);
 
 
 function storeMessages() {
@@ -526,29 +508,14 @@ function observeChatMessages() {
 }
 
 
-let currentHeader = '';
-
-
-const checkForHeaderChangeInterval = setInterval(() => {
-    if (!checkIfInChatChannel()) return;
-    if (currentHeader === '') currentHeader = document.querySelector('#panel-chathistory-content > header > h1').innerText;
-    let header = document.querySelector('#panel-chathistory-content > header > h1').innerText
-    if (currentHeader !== header) {
-        loadedChatHistory = false;
-        checkToLoadData();
-        currentHeader = header;
-    }
-}, 100);
-
-
 async function startCapture() {
     let data = [];
 
     async function startRecording(stream) {
         let recorder = new MediaRecorder(stream, {
-            audioBitsPerSecond: 128000,
-            videoBitsPerSecond: 3000000,
-            mimeType: 'video/webm;codecs=vp9'
+            audioBitsPerSecond: recordingAudioBPS,
+            videoBitsPerSecond: recordingVideoBPS,
+            mimeType: recordingMIMEType
         });
 
         recorder.ondataavailable = event => data.push(event.data);
@@ -562,74 +529,77 @@ async function startCapture() {
     const screenStream = await navigator.mediaDevices.getDisplayMedia({
         video: true,
         audio: true,
-    });
+    }).catch(() => {});
 
-    const mic = await navigator.mediaDevices.getUserMedia({ audio: true });
-
-    const audioContext = new AudioContext();
-    const micStream = audioContext.createMediaStreamSource(mic);
-    const mergedAudioStream = audioContext.createMediaStreamDestination();
+    if (screenStream) {
+        const mic = await navigator.mediaDevices.getUserMedia({ audio: true });
     
-    micStream.connect(mergedAudioStream);
-
-    if (screenStream.getAudioTracks().length > 0) {
-        const desktopStream = new MediaStream();
-        desktopStream.addTrack(screenStream.getAudioTracks()[0]);
-        const desktopAudioStream = audioContext.createMediaStreamSource(desktopStream);
-        desktopAudioStream.connect(mergedAudioStream);
-    }
-
-    const combinedStream = new MediaStream();
-    combinedStream.addTrack(screenStream.getVideoTracks()[0]);
-    combinedStream.addTrack(mergedAudioStream.stream.getAudioTracks()[0]);
-
-    const recorder = await startRecording(combinedStream);
-
-    const stopStream = () => {
-        dl.onclick = startCapture;
-        combinedStream.getTracks().forEach(t => {
-            t.stop();
-        });
-
-        screenStream.getTracks().forEach(t => {
-            t.stop();
-        });
-
-        if (recorder.state !== 'inactive') {
-            recorder.stop();
+        const audioContext = new AudioContext();
+        const micStream = audioContext.createMediaStreamSource(mic);
+        const mergedAudioStream = audioContext.createMediaStreamDestination();
+        
+        micStream.connect(mergedAudioStream);
+    
+        if (screenStream.getAudioTracks().length > 0) {
+            const desktopStream = new MediaStream();
+            desktopStream.addTrack(screenStream.getAudioTracks()[0]);
+            const desktopAudioStream = audioContext.createMediaStreamSource(desktopStream);
+            desktopAudioStream.connect(mergedAudioStream);
         }
+    
+        const combinedStream = new MediaStream();
+        combinedStream.addTrack(screenStream.getVideoTracks()[0]);
+        combinedStream.addTrack(mergedAudioStream.stream.getAudioTracks()[0]);
+    
+        const recorder = await startRecording(combinedStream);
+    
+        const stopStream = () => {
+            dl.onclick = startCapture;
+            combinedStream.getTracks().forEach(t => {
+                t.stop();
+            });
+    
+            screenStream.getTracks().forEach(t => {
+                t.stop();
+            });
+    
+            if (recorder.state !== 'inactive') {
+                recorder.stop();
+            }
+        }
+    
+        const saveRecording = () => {
+            let recordedBlob = new Blob(data, { type: recordingMIMEType});
+    
+            let recording = document.createElement('video');
+            recording.src = URL.createObjectURL(recordedBlob);
+    
+            let link = document.createElement('a');
+            link.setAttribute('href', recording.src);
+    
+            const title = document.title.replace(' - Bb Collaborate', '');
+            let today = new Date();
+            const offset = today.getTimezoneOffset();
+            today = new Date(today.getTime() - (offset * 60 * 1000));
+            today = today.toISOString().split('T')[0];
+    
+            const vidName = `${today}-${title}-recording-${recordingNumber}.webm`;
+            recordingNumber++;
+    
+            link.setAttribute('download', vidName);
+            document.body.appendChild(link);
+    
+            link.click();
+            dl.onclick = startCapture;
+            link.remove();
+        }
+    
+        dl.onclick = stopStream;
+        screenStream.oninactive = stopStream;
+        recorder.onstop = saveRecording;
     }
-
-    const saveRecording = () => {
-        let recordedBlob = new Blob(data, { type: 'video/webm; codecs=vp9' });
-
-        let recording = document.createElement('video');
-        recording.src = URL.createObjectURL(recordedBlob);
-
-        let link = document.createElement('a');
-        link.setAttribute('href', recording.src);
-
-        const title = document.title.replace(' - Bb Collaborate', '');
-        let today = new Date();
-        const offset = today.getTimezoneOffset();
-        today = new Date(today.getTime() - (offset * 60 * 1000));
-        today = today.toISOString().split('T')[0];
-
-        const vidName = `${today}-${title}-recording-${recordingNumber}.webm`;
-        recordingNumber++;
-
-        link.setAttribute('download', vidName);
-        document.body.appendChild(link);
-
-        link.click();
-        dl.onclick = startCapture;
-        link.remove();
-    }
-
-    dl.onclick = stopStream;
-    screenStream.oninactive = stopStream;
-    recorder.onstop = saveRecording;
 }
+
 
 function addCaptureButton() {
     const styleElement = document.createElement('style');
@@ -658,10 +628,32 @@ function addCaptureButton() {
     document.body.appendChild(button);
 }
 
-
 function init() {
+    loadInitialMessages();
     addCaptureButton();
 
+
+    // use intervals to check for DOM changes
+    // in order to setup MutationObservers etc.
+
+    const storeMessagesInterval = setInterval(() => {
+        storeMessages();
+    }, 10000);
+    
+    const checkObserveChat = setInterval(() => {
+        observeChatPanel();
+    }, 500);
+
+    const checkForHeaderChangeInterval = setInterval(() => {
+        if (!checkIfInChatChannel()) return;
+        if (currentHeader === '') currentHeader = document.querySelector('#panel-chathistory-content > header > h1').innerText;
+        let header = document.querySelector('#panel-chathistory-content > header > h1').innerText
+        if (currentHeader !== header) {
+            loadedChatHistory = false;
+            checkToLoadData();
+            currentHeader = header;
+        }
+    }, 100);
 }
 
 init();
